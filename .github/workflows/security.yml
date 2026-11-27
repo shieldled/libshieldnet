@@ -7,7 +7,8 @@ name: Security
 # that pins it), scanned for known vulnerabilities with Grype (a high or
 # critical finding fails the run). It runs on every change and weekly, so an
 # advisory published after the last commit still fails a run. The SBOM is kept
-# as the run's `sbom` artifact. Locally:
+# as the run's `sbom` artifact, and a pushed tag vX.Y.Z publishes a GitHub
+# Release with it attached. Locally:
 #   python3 ci/sbom.py > sbom.cdx.json && grype sbom:sbom.cdx.json
 
 on:
@@ -48,3 +49,51 @@ jobs:
           path: sbom.cdx.json
       - name: Grype
         run: grype sbom:sbom.cdx.json -o table --fail-on high
+
+  # A pushed tag vX.Y.Z gets a GitHub Release: its CHANGELOG section as the
+  # notes, and the SBOM above attached as <repository>-X.Y.Z.cdx.json. It runs
+  # only after the SBOM job passed, so a release never ships with a known high
+  # or critical vulnerability. A release that already exists gets the SBOM
+  # replaced.
+  release:
+    name: GitHub Release with the SBOM
+    needs: sbom
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: sbom
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          set -eu
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::not a release tag: $TAG"; exit 1 ;;
+          esac
+          ver=${TAG#v}
+          # The section under "## [X.Y.Z]" or "## X.Y.Z", without link references.
+          awk -v v="$ver" '
+            BEGIN { gsub(/\./, "\\.", v); h = "^## \\[?" v "\\]?( |$)" }
+            /^## / { if (on) exit; if ($0 ~ h) { on = 1; next } }
+            on && !/^\[[^]]+\]: / { print }
+          ' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::CHANGELOG.md has no section for $ver"; exit 1
+          fi
+          asset="$REPO_NAME-$ver.cdx.json"
+          cp sbom.cdx.json "$asset"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$asset" --clobber
+          else
+            gh release create "$TAG" "$asset" --verify-tag \
+              --title "$REPO_NAME $ver" --notes-file notes.md
+          fi
