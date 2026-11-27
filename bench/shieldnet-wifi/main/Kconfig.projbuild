@@ -1,0 +1,27 @@
+# Copyright (c) 2025-2026 BlackShield LDA
+# SPDX-License-Identifier: Apache-2.0
+menu "ShieldNet Wi-Fi benchmark"
+
+    config SNBENCH_WIFI_SSID
+        string "Wi-Fi SSID"
+        default ""
+        help
+            The AP to join. Left empty the app will refuse to run.
+
+    config SNBENCH_WIFI_PASSWORD
+        string "Wi-Fi password"
+        default ""
+        help
+            WPA2 password; empty means an open AP.
+
+    config SNBENCH_PORT
+        int "UDP port to listen on"
+        default 32100
+
+    config SNBENCH_PSK_HEX
+        string "ShieldNet PSK (64 hex chars)"
+        default "3333333333333333333333333333333333333333333333333333333333333333"
+        help
+            Must match the PSK the host-side driver uses.
+
+endmenu

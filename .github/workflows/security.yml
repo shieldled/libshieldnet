@@ -1,0 +1,50 @@
+# Copyright (c) 2025-2026 BlackShield LDA
+# SPDX-License-Identifier: Apache-2.0
+name: Security
+
+# A CycloneDX SBOM of the library and the third-party code it builds with
+# (vendored LZ4 and KCP, libsodium; ci/sbom.py reads each version from the file
+# that pins it), scanned for known vulnerabilities with Grype (a high or
+# critical finding fails the run). It runs on every change and weekly, so an
+# advisory published after the last commit still fails a run. The SBOM is kept
+# as the run's `sbom` artifact. Locally:
+#   python3 ci/sbom.py > sbom.cdx.json && grype sbom:sbom.cdx.json
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sbom:
+    name: SBOM + vulnerability scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GRYPE_VERSION: 0.116.0
+      GRYPE_SHA256: 40aff724297312f91ea390d003bed8d8651c74cc7f5b26732db80b3a408d2fc5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Grype (checksum-pinned release binary)
+        run: |
+          set -eu
+          bin="$RUNNER_TEMP/bin"; mkdir -p "$bin"
+          curl -fsSL -o "$RUNNER_TEMP/grype.tar.gz" "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+          echo "$GRYPE_SHA256  $RUNNER_TEMP/grype.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/grype.tar.gz" -C "$bin" grype
+          echo "$bin" >> "$GITHUB_PATH"
+      - name: SBOM (CycloneDX 1.6)
+        run: python3 ci/sbom.py > sbom.cdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.cdx.json
+      - name: Grype
+        run: grype sbom:sbom.cdx.json -o table --fail-on high

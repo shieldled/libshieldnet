@@ -1,0 +1,23 @@
+/build/
+
+# On-device benchmarks: ESP-IDF output. The Wi-Fi benchmark's sdkconfig holds
+# credentials, so neither app's sdkconfig is ever committed.
+bench/*/build/
+bench/*/sdkconfig
+bench/*/sdkconfig.old
+bench/*/managed_components/
+bench/*/dependencies.lock
+
+# MkDocs output
+/site/
+
+# Python bytecode (the MkDocs hook)
+__pycache__/
+
+# The examples key file (examples/README.md): never commit a key
+/psk.hex
+
+# Local tooling and planning notes, never committed
+/plans/
+.claude/
+.serena/

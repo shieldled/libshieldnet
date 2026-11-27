@@ -1,0 +1,183 @@
+# Copyright (c) 2025-2026 BlackShield LDA
+# SPDX-License-Identifier: Apache-2.0
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Every job runs in a stock ubuntu:24.04 container, set up by ci/install-deps.sh,
+# so the host only has to provide Docker. The image is the official one, pulled
+# through Google's Docker Hub mirror: anonymous pulls from Docker Hub itself are
+# rate-limited per runner IP, and on shared runners that limit is routinely
+# exhausted before a job starts ("toomanyrequests"). The host is GitHub's ubuntu-24.04 unless
+# the repository variable CI_RUNS_ON names another as JSON, e.g.
+#   ["self-hosted", "linux", "x64"]
+# Reproduce any job locally:
+#   docker run --rm -v "$PWD":/src -w /src ubuntu:24.04 \
+#       sh -c 'ci/install-deps.sh && ci/build-and-test.sh asan'
+
+jobs:
+  build-test:
+    name: build + test (${{ matrix.mode }})
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-24.04"') }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [asan, plain, constants]
+    container:
+      image: mirror.gcr.io/library/ubuntu:24.04
+      # SYS_PTRACE: LeakSanitizer stops the process to scan it. seccomp
+      # unconfined: setarch -R (ADDR_NO_RANDOMIZE) for the TSan test, which
+      # Docker's default profile refuses.
+      options: --cap-add=SYS_PTRACE --security-opt seccomp=unconfined
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache libsodium
+        uses: actions/cache@v4
+        with:
+          path: ~/.local
+          key: libsodium-1.0.20-ubuntu24.04-${{ hashFiles('ci/install-deps.sh') }}
+      - name: Install dependencies
+        run: ci/install-deps.sh
+      - name: Build and test
+        run: ci/build-and-test.sh ${{ matrix.mode }}
+
+  fuzz:
+    name: fuzz (libFuzzer, ${{ vars.CI_FUZZ_SECONDS || '60' }}s per target)
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-24.04"') }}
+    timeout-minutes: 30
+    container:
+      image: mirror.gcr.io/library/ubuntu:24.04
+      options: --cap-add=SYS_PTRACE
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache libsodium
+        uses: actions/cache@v4
+        with:
+          path: ~/.local
+          key: libsodium-1.0.20-ubuntu24.04-${{ hashFiles('ci/install-deps.sh') }}
+      - name: Install dependencies
+        run: ci/install-deps.sh
+      - name: Fuzz
+        run: ci/fuzz.sh ${{ vars.CI_FUZZ_SECONDS || '60' }}
+      - name: Upload reproducers
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: build/ci-fuzz/artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # 64-bit Windows: MinGW-w64 cross-build of both libraries with the Win32 OS
+  # port; the root build's tests and the whole test suite run under Wine.
+  windows:
+    name: windows (MinGW-w64 cross-build, tests under Wine)
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-24.04"') }}
+    timeout-minutes: 30
+    container:
+      image: mirror.gcr.io/library/ubuntu:24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cross-build and test
+        run: ci/cross-windows.sh
+
+  # The same on real Windows: MSYS2's UCRT64 toolchain and libsodium, the root
+  # build and the whole test suite on the Win32 OS port.
+  windows-native:
+    name: windows (native, MSYS2 UCRT64)
+    runs-on: windows-2022
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-libsodium
+      - name: Libraries and link checks
+        run: |
+          cmake -S . -B build/root -G Ninja
+          cmake --build build/root
+          ctest --test-dir build/root --output-on-failure
+      - name: Test suite
+        run: |
+          cmake -S test/sn -B build/test -G Ninja
+          cmake --build build/test
+          ctest --test-dir build/test --output-on-failure
+
+  # The ESP-IDF benchmark apps for every target their READMEs name (build only).
+  esp32:
+    name: esp32 (ESP-IDF v6.0 builds of bench/)
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-24.04"') }}
+    timeout-minutes: 45
+    container:
+      image: espressif/idf:v6.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        shell: bash
+        run: . "$IDF_PATH/export.sh" >/dev/null && ci/build-esp32.sh
+
+  # goshieldnet's C interop row against this tree's host build. sn_host and
+  # sn_client_host come from host; the Go tests drive them.
+  interop:
+    name: goshieldnet C interop
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # The job tests goshieldnet's main branch (a public repository).
+      GOSHIELDNET_REF: main
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: ci/install-deps.sh
+      - name: Build host tools
+        run: |
+          export PKG_CONFIG_PATH="$HOME/.local/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+          cmake -S host -B "$RUNNER_TEMP/sn-host"
+          cmake --build "$RUNNER_TEMP/sn-host" -j"$(nproc)"
+      - name: Check out goshieldnet
+        uses: actions/checkout@v4
+        with:
+          repository: shieldled/goshieldnet
+          ref: ${{ env.GOSHIELDNET_REF }}
+          path: goshieldnet
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: goshieldnet/go.mod
+          cache-dependency-path: goshieldnet/go.sum
+      - name: C interop
+        working-directory: goshieldnet
+        env:
+          SHIELDNET_REQUIRE_INTEROP: "1"
+          SHIELDNET_INTEROP_COMPRESS: "1"
+          SN_HOST_BIN: ${{ runner.temp }}/sn-host/sn_host
+          SN_CLIENT_HOST_BIN: ${{ runner.temp }}/sn-host/sn_client_host
+        shell: bash
+        run: |
+          set -o pipefail
+          export LD_LIBRARY_PATH="$HOME/.local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          go test ./v1 -count=1 -run '^(TestCDeviceGoClientInterop|TestGoDeviceCClientInterop)$' -v | tee interop.log
+          if grep -E -- '--- SKIP' interop.log; then echo '::error::interop test skipped'; exit 1; fi
+          grep -qF -- '--- PASS: TestGoDeviceCClientInterop/compressed' interop.log \
+            || { echo '::error::compressed-send subtest did not run and pass'; exit 1; }

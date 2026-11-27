@@ -1,0 +1,22 @@
+libshieldnet
+Copyright (c) 2025-2026 BlackShield LDA
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It contains, or is built with, the following components.
+
+LZ4 (BSD 2-Clause License)
+  Copyright (C) 2011-2023, Yann Collet.
+  vendor/lz4.c, lz4.h (licence text at the head of lz4.c)
+
+KCP (MIT License)
+  Copyright (c) 2017 Lin Wei (skywind3000 at gmail.com)
+  vendor/ikcp.c, ikcp.h. The vendored files carry no licence header; the
+  licence is that of upstream https://github.com/skywind3000/kcp (LICENSE, MIT).
+  Upstream baseline: skywind3000/kcp 1.7.1 (commit 8004f7eb).
+  Modified by BlackShield LDA; the changes are listed in ikcp.h's header.
+
+libsodium (ISC License)
+  https://libsodium.org
+  An external dependency (system package or ESP-IDF component); not
+  redistributed here.

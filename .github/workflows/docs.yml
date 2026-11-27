@@ -1,0 +1,60 @@
+# Copyright (c) 2025-2026 BlackShield LDA
+# SPDX-License-Identifier: Apache-2.0
+name: Docs
+
+# Builds the MkDocs site (mkdocs.yml, docs/) on every pull request and push, and
+# publishes it to GitHub Pages from main. One-time setup: Settings -> Pages ->
+# Build and deployment -> Source: "GitHub Actions". Local preview:
+#   pip install -r docs/requirements.txt && mkdocs serve
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  # Never cancel a deployment half-way; superseded pull-request builds may go.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: mkdocs build --strict
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-24.04"') }}
+    timeout-minutes: 10
+    # The official image through Google's Docker Hub mirror, as in ci.yml.
+    container:
+      image: mirror.gcr.io/library/python:3.12-slim
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install MkDocs
+        run: pip install --no-cache-dir -r docs/requirements.txt
+      - name: Build
+        env:
+          NO_MKDOCS_2_WARNING: "1"
+        run: mkdocs build --strict
+      - name: Upload the site
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && !github.event.repository.private
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    name: deploy to GitHub Pages
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && !github.event.repository.private
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-24.04"') }}
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

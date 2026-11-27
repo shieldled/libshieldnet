@@ -1,0 +1,13 @@
+# Copyright (c) 2025-2026 BlackShield LDA
+# SPDX-License-Identifier: Apache-2.0
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+# Give app_main a generous stack: the benchmark holds a few KCP objects + buffers.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=32768
+
+# 240 MHz (default is 160) — measure the part at full speed.
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
+# The benchmark loops are deliberately CPU-bound; don't let the WDT spam the log.
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=60
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=n

@@ -1,0 +1,87 @@
+# Copyright (c) 2025-2026 BlackShield LDA
+# SPDX-License-Identifier: Apache-2.0
+# The documentation site, published to GitHub Pages by .github/workflows/docs.yml.
+# Every page under docs/ includes a Markdown file from the repository, and docs/
+# mirrors the repository's layout, so the relative links between those files
+# work both on GitHub and on the site. Local preview:
+#   pip install -r docs/requirements.txt && mkdocs serve
+site_name: libshieldnet
+site_description: The ShieldNet protocol in C, device and client roles
+repo_url: https://github.com/shieldled/libshieldnet
+repo_name: shieldled/libshieldnet
+edit_uri: ""
+site_url: https://shieldled.github.io/libshieldnet/
+exclude_docs: |
+  requirements.txt
+  hooks/
+
+# Generates the API reference (api/) from the public headers at build time.
+hooks:
+  - docs/hooks/api_reference.py
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.sections
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-4
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-7
+        name: Light mode
+
+plugins:
+  - search
+  - include-markdown:
+      rewrite_relative_urls: false
+  # llms.txt and llms-full.txt (https://llmstxt.org) at the site root, for LLMs.
+  - llmstxt:
+      markdown_description: >-
+        libshieldnet is the portable C11 implementation of ShieldNet, the encrypted protocol between ShieldLED controllers and LED devices, in both roles: device and client. Desktop applications should use libshieldnet-client instead.
+      full_output: llms-full.txt
+      sections:
+        Start here:
+          - index.md: What the library is, how ShieldNet works, building, and integrating it as a device or a client
+          - agents.md: Rules and entry points for LLMs and coding agents
+        Examples:
+          - examples/README.md: Two complete programs, an LED device and a client, with their sources
+        API reference:
+          - api/index.md: Every public header by area, and every symbol A-Z
+          - api/*.md
+        Benchmarks:
+          - bench/shieldnet-esp32/README.md: On-device ESP32 benchmark of the crypto and receive path
+          - bench/shieldnet-wifi/README.md: Over-the-air Wi-Fi throughput benchmark
+        Optional:
+          - changelog.md: Release notes
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+nav:
+  - Overview: index.md
+  - Examples: examples/README.md
+  - API reference: api/index.md
+  - For AI assistants: agents.md
+  - Benchmarks:
+      - On-device: bench/shieldnet-esp32/README.md
+      - Wi-Fi: bench/shieldnet-wifi/README.md
+  - Changelog: changelog.md
+  - Specification: https://github.com/shieldled/shieldnet-protocol
